@@ -26,11 +26,15 @@ interface FallDetectionContextType {
   activeAlertId: string | null;
   accelerometerData: AccelerometerData | null;
   permissionStatus: 'unknown' | 'granted' | 'denied' | 'not-needed';
+  isFeatureEnabled: boolean;
 }
 
 const FallDetectionContext = createContext<FallDetectionContextType | undefined>(undefined);
 
 export function FallDetectionProvider({ children }: { children: React.ReactNode }) {
+  // Check if fall detection is enabled via env variable
+  const isFeatureEnabled = import.meta.env.VITE_ENABLE_FALL_DETECTION !== 'false';
+
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [showAlert, setShowAlert] = useState(false);
   const [currentWorkerId, setCurrentWorkerId] = useState('');
@@ -48,7 +52,7 @@ export function FallDetectionProvider({ children }: { children: React.ReactNode 
   const AUTO_ALERT_DELAY = 60000; // 60 seconds
 
   useEffect(() => {
-    if (!isMonitoring) {
+    if (!isMonitoring || !isFeatureEnabled) {
       setAccelerometerData(null);
       return;
     }
@@ -273,30 +277,35 @@ export function FallDetectionProvider({ children }: { children: React.ReactNode 
   async function startMonitoring(workerId: string) {
     setCurrentWorkerId(workerId);
 
-    // Request permission for iOS 13+
-    if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
-      try {
-        console.log('Requesting motion permission for iOS...');
-        const permission = await (DeviceMotionEvent as any).requestPermission();
-        console.log('Permission result:', permission);
+    // Only request permission if feature is enabled
+    if (isFeatureEnabled) {
+      // Request permission for iOS 13+
+      if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
+        try {
+          console.log('Requesting motion permission for iOS...');
+          const permission = await (DeviceMotionEvent as any).requestPermission();
+          console.log('Permission result:', permission);
 
-        if (permission === 'granted') {
-          setPermissionStatus('granted');
-        } else {
+          if (permission === 'granted') {
+            setPermissionStatus('granted');
+          } else {
+            setPermissionStatus('denied');
+            alert('❌ Motion sensor permission denied. Fall detection will not work. Please enable motion sensors in your browser settings.');
+            return;
+          }
+        } catch (error) {
+          console.error('Error requesting motion permission:', error);
           setPermissionStatus('denied');
-          alert('❌ Motion sensor permission denied. Fall detection will not work. Please enable motion sensors in your browser settings.');
+          alert('❌ Error requesting motion sensor permission: ' + error);
           return;
         }
-      } catch (error) {
-        console.error('Error requesting motion permission:', error);
-        setPermissionStatus('denied');
-        alert('❌ Error requesting motion sensor permission: ' + error);
-        return;
+      } else {
+        // Permission not needed (non-iOS or older iOS)
+        console.log('Motion permission not required on this device');
+        setPermissionStatus('not-needed');
       }
     } else {
-      // Permission not needed (non-iOS or older iOS)
-      console.log('Motion permission not required on this device');
-      setPermissionStatus('not-needed');
+      console.log('⚠️ Fall detection is disabled via VITE_ENABLE_FALL_DETECTION env variable');
     }
 
     // Create work shift
@@ -317,7 +326,7 @@ export function FallDetectionProvider({ children }: { children: React.ReactNode 
     if (data) {
       setCurrentShiftId(data.id);
       setIsMonitoring(true);
-      console.log('✅ Fall detection monitoring started');
+      console.log(isFeatureEnabled ? '✅ Fall detection monitoring started' : '✅ Work shift started (fall detection disabled)');
     }
   }
 
@@ -351,6 +360,7 @@ export function FallDetectionProvider({ children }: { children: React.ReactNode 
         activeAlertId,
         accelerometerData,
         permissionStatus,
+        isFeatureEnabled,
       }}
     >
       {children}

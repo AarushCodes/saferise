@@ -8,7 +8,7 @@ import { supabase } from '../../../shared/lib/supabase';
 
 export default function WorkerHome() {
   const { user, signOut } = useAuth();
-  const { isMonitoring, startMonitoring, stopMonitoring, showAlert, dismissAlert, triggerEmergency, setWorkerId: setFallDetectionWorkerId, sosStatus, cancelSOS, accelerometerData, permissionStatus } = useFallDetection();
+  const { isMonitoring, startMonitoring, stopMonitoring, showAlert, dismissAlert, triggerEmergency, setWorkerId: setFallDetectionWorkerId, sosStatus, cancelSOS, accelerometerData, permissionStatus, isFeatureEnabled } = useFallDetection();
   const [workerId, setWorkerId] = useState('');
   const [todayCheckIn, setTodayCheckIn] = useState<any>(null);
   const [trainingComplete, setTrainingComplete] = useState(false);
@@ -151,38 +151,40 @@ export default function WorkerHome() {
           </Card>
         )}
 
-        {/* Fall Detection Toggle */}
-        <Card className={isMonitoring ? 'bg-green-50 border-2 border-green-500' : 'bg-blue-50 border-2 border-blue-200'}>
-          <CardBody>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="text-4xl">
-                  {isMonitoring ? '🟢' : '⏸️'}
+        {/* Fall Detection Toggle - Only show if feature is enabled */}
+        {isFeatureEnabled && (
+          <Card className={isMonitoring ? 'bg-green-50 border-2 border-green-500' : 'bg-blue-50 border-2 border-blue-200'}>
+            <CardBody>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="text-4xl">
+                    {isMonitoring ? '🟢' : '⏸️'}
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900 mb-1">
+                      {isMonitoring ? 'Safety Monitoring Active' : 'Start Your Work Shift'}
+                    </h3>
+                    <p className="text-sm text-gray-600">
+                      {isMonitoring
+                        ? 'Fall detection is monitoring your safety'
+                        : 'Enable fall detection when you start work'}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900 mb-1">
-                    {isMonitoring ? 'Safety Monitoring Active' : 'Start Your Work Shift'}
-                  </h3>
-                  <p className="text-sm text-gray-600">
-                    {isMonitoring
-                      ? 'Fall detection is monitoring your safety'
-                      : 'Enable fall detection when you start work'}
-                  </p>
-                </div>
+                <Button
+                  size="lg"
+                  variant={isMonitoring ? 'danger' : 'primary'}
+                  onClick={handleToggleMonitoring}
+                >
+                  {isMonitoring ? 'End Work' : 'Start Work'}
+                </Button>
               </div>
-              <Button
-                size="lg"
-                variant={isMonitoring ? 'danger' : 'primary'}
-                onClick={handleToggleMonitoring}
-              >
-                {isMonitoring ? 'End Work' : 'Start Work'}
-              </Button>
-            </div>
-          </CardBody>
-        </Card>
+            </CardBody>
+          </Card>
+        )}
 
-        {/* Accelerometer Debug Display */}
-        {isMonitoring && (
+        {/* Accelerometer Debug Display - Only show if feature is enabled */}
+        {isFeatureEnabled && isMonitoring && (
           <Card className="bg-purple-50 border-2 border-purple-300">
             <CardBody>
               <div className="space-y-3">
