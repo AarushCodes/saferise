@@ -8,7 +8,7 @@ import { supabase } from '../../../shared/lib/supabase';
 
 export default function WorkerHome() {
   const { user, signOut } = useAuth();
-  const { isMonitoring, startMonitoring, stopMonitoring, showAlert, dismissAlert, triggerEmergency, setWorkerId: setFallDetectionWorkerId, sosStatus, cancelSOS } = useFallDetection();
+  const { isMonitoring, startMonitoring, stopMonitoring, showAlert, dismissAlert, triggerEmergency, setWorkerId: setFallDetectionWorkerId, sosStatus, cancelSOS, accelerometerData, permissionStatus } = useFallDetection();
   const [workerId, setWorkerId] = useState('');
   const [todayCheckIn, setTodayCheckIn] = useState<any>(null);
   const [trainingComplete, setTrainingComplete] = useState(false);
@@ -180,6 +180,70 @@ export default function WorkerHome() {
             </div>
           </CardBody>
         </Card>
+
+        {/* Accelerometer Debug Display */}
+        {isMonitoring && (
+          <Card className="bg-purple-50 border-2 border-purple-300">
+            <CardBody>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-bold text-gray-900">
+                    📊 Accelerometer Data (Debug)
+                  </h3>
+                  <span className={`text-xs px-2 py-1 rounded ${
+                    permissionStatus === 'granted' ? 'bg-green-200 text-green-800' :
+                    permissionStatus === 'not-needed' ? 'bg-blue-200 text-blue-800' :
+                    permissionStatus === 'denied' ? 'bg-red-200 text-red-800' :
+                    'bg-gray-200 text-gray-800'
+                  }`}>
+                    {permissionStatus === 'granted' ? '✓ Permission Granted' :
+                     permissionStatus === 'not-needed' ? '✓ Permission Not Needed' :
+                     permissionStatus === 'denied' ? '✗ Permission Denied' :
+                     '? Unknown'}
+                  </span>
+                </div>
+
+                {accelerometerData ? (
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div className="bg-white p-3 rounded border">
+                      <div className="text-xs text-gray-600 mb-1">X-axis</div>
+                      <div className="text-lg font-mono font-bold">
+                        {accelerometerData.x.toFixed(2)} m/s²
+                      </div>
+                    </div>
+                    <div className="bg-white p-3 rounded border">
+                      <div className="text-xs text-gray-600 mb-1">Y-axis</div>
+                      <div className="text-lg font-mono font-bold">
+                        {accelerometerData.y.toFixed(2)} m/s²
+                      </div>
+                    </div>
+                    <div className="bg-white p-3 rounded border">
+                      <div className="text-xs text-gray-600 mb-1">Z-axis</div>
+                      <div className="text-lg font-mono font-bold">
+                        {accelerometerData.z.toFixed(2)} m/s²
+                      </div>
+                    </div>
+                    <div className="bg-white p-3 rounded border">
+                      <div className="text-xs text-gray-600 mb-1">Total</div>
+                      <div className="text-lg font-mono font-bold">
+                        {accelerometerData.total.toFixed(2)} m/s²
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-4 text-gray-600">
+                    <p className="text-sm">Waiting for accelerometer data...</p>
+                    <p className="text-xs mt-2">Try moving your device to see readings</p>
+                  </div>
+                )}
+
+                <div className="text-xs text-gray-600 text-center pt-2 border-t">
+                  Fall Detection Threshold: 15 m/s² | Check console for logs
+                </div>
+              </div>
+            </CardBody>
+          </Card>
+        )}
 
         {/* Manual SOS Button */}
         <Card className="bg-red-50 border-2 border-red-300">

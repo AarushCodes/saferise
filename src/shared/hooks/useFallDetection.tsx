@@ -5,6 +5,14 @@ import { playSiren, stopSiren } from '../lib/siren';
 
 type SOSStatus = 'standby' | 'alerting' | 'emergency';
 
+interface AccelerometerData {
+  x: number;
+  y: number;
+  z: number;
+  total: number;
+  timestamp: number;
+}
+
 interface FallDetectionContextType {
   isMonitoring: boolean;
   startMonitoring: (workerId: string) => Promise<void>;
@@ -16,6 +24,8 @@ interface FallDetectionContextType {
   sosStatus: SOSStatus;
   cancelSOS: () => Promise<void>;
   activeAlertId: string | null;
+  accelerometerData: AccelerometerData | null;
+  permissionStatus: 'unknown' | 'granted' | 'denied' | 'not-needed';
 }
 
 const FallDetectionContext = createContext<FallDetectionContextType | undefined>(undefined);
@@ -28,26 +38,44 @@ export function FallDetectionProvider({ children }: { children: React.ReactNode 
   const [alertId, setAlertId] = useState('');
   const [sosStatus, setSosStatus] = useState<SOSStatus>('standby');
   const [activeAlertId, setActiveAlertId] = useState<string | null>(null);
+  const [accelerometerData, setAccelerometerData] = useState<AccelerometerData | null>(null);
+  const [permissionStatus, setPermissionStatus] = useState<'unknown' | 'granted' | 'denied' | 'not-needed'>('unknown');
 
   const lastAccelerationRef = useRef({ x: 0, y: 0, z: 0 });
   const alertTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const FALL_THRESHOLD = 20; // m/s² - adjust based on testing
+  const FALL_THRESHOLD = 15; // m/s² - lowered for realistic detection
   const AUTO_ALERT_DELAY = 60000; // 60 seconds
 
   useEffect(() => {
-    if (!isMonitoring) return;
-
-    let permissionGranted = false;
+    if (!isMonitoring) {
+      setAccelerometerData(null);
+      return;
+    }
 
     const handleMotion = async (event: DeviceMotionEvent) => {
-      if (!permissionGranted || !event.acceleration) return;
+      if (!event.acceleration) {
+        console.warn('No acceleration data available');
+        return;
+      }
 
       const { x, y, z } = event.acceleration;
-      if (x === null || y === null || z === null) return;
+      if (x === null || y === null || z === null) {
+        console.warn('Acceleration values are null');
+        return;
+      }
 
       // Calculate total acceleration
       const totalAcceleration = Math.sqrt(x * x + y * y + z * z);
+
+      // Update UI with current readings
+      setAccelerometerData({
+        x,
+        y,
+        z,
+        total: totalAcceleration,
+        timestamp: Date.now(),
+      });
 
       // Calculate change in acceleration
       const lastTotal = Math.sqrt(
@@ -61,38 +89,26 @@ export function FallDetectionProvider({ children }: { children: React.ReactNode 
       // Update last acceleration
       lastAccelerationRef.current = { x, y, z };
 
+      // Debug logging
+      console.log(`Accel: x=${x.toFixed(2)}, y=${y.toFixed(2)}, z=${z.toFixed(2)}, total=${totalAcceleration.toFixed(2)}, change=${accelerationChange.toFixed(2)}`);
+
       // Check for fall (sudden spike in acceleration)
       if (accelerationChange > FALL_THRESHOLD) {
+        console.warn(`🚨 FALL DETECTED! Change: ${accelerationChange.toFixed(2)} m/s² (threshold: ${FALL_THRESHOLD})`);
         await handleFallDetected();
       }
     };
 
-    // Request permission for iOS 13+
-    const requestPermission = async () => {
-      if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
-        try {
-          const permission = await (DeviceMotionEvent as any).requestPermission();
-          permissionGranted = permission === 'granted';
-        } catch (error) {
-          console.error('Error requesting motion permission:', error);
-        }
-      } else {
-        // Permission not needed (non-iOS or older iOS)
-        permissionGranted = true;
-      }
-
-      if (permissionGranted) {
-        window.addEventListener('devicemotion', handleMotion);
-      }
-    };
-
-    requestPermission();
+    // Add event listener (permission is requested in startMonitoring)
+    window.addEventListener('devicemotion', handleMotion);
+    console.log('✅ DeviceMotion event listener added');
 
     return () => {
       window.removeEventListener('devicemotion', handleMotion);
       if (alertTimeoutRef.current) {
         clearTimeout(alertTimeoutRef.current);
       }
+      console.log('❌ DeviceMotion event listener removed');
     };
   }, [isMonitoring]);
 
@@ -257,6 +273,32 @@ export function FallDetectionProvider({ children }: { children: React.ReactNode 
   async function startMonitoring(workerId: string) {
     setCurrentWorkerId(workerId);
 
+    // Request permission for iOS 13+
+    if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
+      try {
+        console.log('Requesting motion permission for iOS...');
+        const permission = await (DeviceMotionEvent as any).requestPermission();
+        console.log('Permission result:', permission);
+
+        if (permission === 'granted') {
+          setPermissionStatus('granted');
+        } else {
+          setPermissionStatus('denied');
+          alert('❌ Motion sensor permission denied. Fall detection will not work. Please enable motion sensors in your browser settings.');
+          return;
+        }
+      } catch (error) {
+        console.error('Error requesting motion permission:', error);
+        setPermissionStatus('denied');
+        alert('❌ Error requesting motion sensor permission: ' + error);
+        return;
+      }
+    } else {
+      // Permission not needed (non-iOS or older iOS)
+      console.log('Motion permission not required on this device');
+      setPermissionStatus('not-needed');
+    }
+
     // Create work shift
     const { data, error } = await supabase
       .from('work_shifts')
@@ -275,6 +317,7 @@ export function FallDetectionProvider({ children }: { children: React.ReactNode 
     if (data) {
       setCurrentShiftId(data.id);
       setIsMonitoring(true);
+      console.log('✅ Fall detection monitoring started');
     }
   }
 
@@ -306,6 +349,8 @@ export function FallDetectionProvider({ children }: { children: React.ReactNode 
         sosStatus,
         cancelSOS,
         activeAlertId,
+        accelerometerData,
+        permissionStatus,
       }}
     >
       {children}
