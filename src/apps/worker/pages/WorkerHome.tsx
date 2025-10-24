@@ -8,10 +8,13 @@ import { supabase } from '../../../shared/lib/supabase';
 
 export default function WorkerHome() {
   const { user, signOut } = useAuth();
-  const { isMonitoring, startMonitoring, stopMonitoring, showAlert, dismissAlert, triggerEmergency, setWorkerId: setFallDetectionWorkerId, sosStatus, cancelSOS, accelerometerData, permissionStatus, isFeatureEnabled } = useFallDetection();
+  const { isMonitoring, startMonitoring, stopMonitoring, showAlert, dismissAlert, triggerEmergency, setWorkerId: setFallDetectionWorkerId, sosStatus, cancelSOS, accelerometerData, permissionStatus, isFeatureEnabled, alertDelaySeconds } = useFallDetection();
   const [workerId, setWorkerId] = useState('');
   const [todayCheckIn, setTodayCheckIn] = useState<any>(null);
   const [trainingComplete, setTrainingComplete] = useState(false);
+
+  // Check if accelerometer debug should be shown
+  const showAccelerometerDebug = import.meta.env.VITE_SHOW_ACCELEROMETER_DEBUG !== 'false';
 
   useEffect(() => {
     loadWorkerProfile();
@@ -102,6 +105,7 @@ export default function WorkerHome() {
         isOpen={showAlert}
         onSafe={dismissAlert}
         onEmergency={triggerEmergency}
+        durationSeconds={alertDelaySeconds}
       />
 
       {/* Header */}
@@ -183,8 +187,8 @@ export default function WorkerHome() {
           </Card>
         )}
 
-        {/* Accelerometer Debug Display - Only show if feature is enabled */}
-        {isFeatureEnabled && isMonitoring && (
+        {/* Accelerometer Debug Display - Only show if feature is enabled and debug is enabled */}
+        {isFeatureEnabled && isMonitoring && showAccelerometerDebug && (
           <Card className="bg-purple-50 border-2 border-purple-300">
             <CardBody>
               <div className="space-y-3">
@@ -240,7 +244,7 @@ export default function WorkerHome() {
                 )}
 
                 <div className="text-xs text-gray-600 text-center pt-2 border-t">
-                  Fall Detection Threshold: 15 m/s² | Check console for logs
+                  Fall Detection Threshold: 15 m/s² | Alert Delay: {alertDelaySeconds}s | Check console for logs
                 </div>
               </div>
             </CardBody>

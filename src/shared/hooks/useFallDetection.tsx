@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, createContext, useContext } from 'react';
 import { supabase } from '../lib/supabase';
 import { getCurrentLocation } from '../lib/utils';
-import { playSiren, stopSiren } from '../lib/siren';
+import { playSiren, stopSiren, playWarningSound } from '../lib/siren';
 
 type SOSStatus = 'standby' | 'alerting' | 'emergency';
 
@@ -27,6 +27,7 @@ interface FallDetectionContextType {
   accelerometerData: AccelerometerData | null;
   permissionStatus: 'unknown' | 'granted' | 'denied' | 'not-needed';
   isFeatureEnabled: boolean;
+  alertDelaySeconds: number;
 }
 
 const FallDetectionContext = createContext<FallDetectionContextType | undefined>(undefined);
@@ -34,6 +35,10 @@ const FallDetectionContext = createContext<FallDetectionContextType | undefined>
 export function FallDetectionProvider({ children }: { children: React.ReactNode }) {
   // Check if fall detection is enabled via env variable
   const isFeatureEnabled = import.meta.env.VITE_ENABLE_FALL_DETECTION !== 'false';
+
+  // Get alert delay from env (default 10 seconds)
+  const alertDelaySeconds = parseInt(import.meta.env.VITE_FALL_ALERT_DELAY || '10', 10);
+  const AUTO_ALERT_DELAY = alertDelaySeconds * 1000; // Convert to milliseconds
 
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [showAlert, setShowAlert] = useState(false);
@@ -49,7 +54,6 @@ export function FallDetectionProvider({ children }: { children: React.ReactNode 
   const alertTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const FALL_THRESHOLD = 15; // m/s² - lowered for realistic detection
-  const AUTO_ALERT_DELAY = 60000; // 60 seconds
 
   useEffect(() => {
     if (!isMonitoring || !isFeatureEnabled) {
@@ -118,6 +122,9 @@ export function FallDetectionProvider({ children }: { children: React.ReactNode 
 
   async function handleFallDetected() {
     if (showAlert) return; // Already showing an alert
+
+    // Play warning sound immediately
+    playWarningSound();
 
     const location = await getCurrentLocation();
 
@@ -361,6 +368,7 @@ export function FallDetectionProvider({ children }: { children: React.ReactNode 
         accelerometerData,
         permissionStatus,
         isFeatureEnabled,
+        alertDelaySeconds,
       }}
     >
       {children}

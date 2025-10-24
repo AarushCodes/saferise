@@ -5,16 +5,20 @@ interface FallAlertModalProps {
   isOpen: boolean;
   onSafe: () => void;
   onEmergency: () => void;
+  durationSeconds?: number; // Optional, defaults to 60
 }
 
-export function FallAlertModal({ isOpen, onSafe, onEmergency }: FallAlertModalProps) {
-  const [countdown, setCountdown] = useState(60);
+export function FallAlertModal({ isOpen, onSafe, onEmergency, durationSeconds = 60 }: FallAlertModalProps) {
+  const [countdown, setCountdown] = useState(durationSeconds);
 
   useEffect(() => {
     if (!isOpen) {
-      setCountdown(60);
+      setCountdown(durationSeconds);
       return;
     }
+
+    // Reset countdown when modal opens
+    setCountdown(durationSeconds);
 
     const interval = setInterval(() => {
       setCountdown(prev => {
@@ -27,7 +31,7 @@ export function FallAlertModal({ isOpen, onSafe, onEmergency }: FallAlertModalPr
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isOpen, onEmergency]);
+  }, [isOpen, onEmergency, durationSeconds]);
 
   if (!isOpen) return null;
 

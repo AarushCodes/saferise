@@ -71,3 +71,75 @@ export function stopSiren() {
 export function isSirenPlaying(): boolean {
   return isPlaying;
 }
+
+// Warning sound for fall detection alert (different from emergency siren)
+let warningAudioContext: AudioContext | null = null;
+let warningOscillator: OscillatorNode | null = null;
+let warningGainNode: GainNode | null = null;
+let isWarningPlaying = false;
+
+export function playWarningSound() {
+  if (isWarningPlaying) return;
+
+  // Create audio context
+  warningAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+
+  // Create oscillator for warning beep sound
+  warningOscillator = warningAudioContext.createOscillator();
+  warningGainNode = warningAudioContext.createGain();
+
+  // Connect nodes
+  warningOscillator.connect(warningGainNode);
+  warningGainNode.connect(warningAudioContext.destination);
+
+  // Warning beep parameters - higher pitch, shorter beeps
+  warningOscillator.type = 'square'; // Square wave for more alerting sound
+  warningOscillator.frequency.value = 1500; // Higher frequency for warning
+  warningGainNode.gain.value = 0.25; // Slightly quieter than emergency siren
+
+  const now = warningAudioContext.currentTime;
+  const beepDuration = 0.15; // 150ms beep
+  const pauseDuration = 0.15; // 150ms pause
+
+  // Create beeping pattern (beep, pause, beep, pause, beep)
+  for (let i = 0; i < 5; i++) {
+    const startTime = now + (i * (beepDuration + pauseDuration));
+    const endTime = startTime + beepDuration;
+
+    warningGainNode.gain.setValueAtTime(0.25, startTime);
+    warningGainNode.gain.setValueAtTime(0, endTime);
+  }
+
+  // Start and stop the warning sound
+  warningOscillator.start(now);
+  const totalDuration = 5 * (beepDuration + pauseDuration);
+  warningOscillator.stop(now + totalDuration);
+
+  isWarningPlaying = true;
+
+  // Reset state when done
+  warningOscillator.onended = () => {
+    isWarningPlaying = false;
+    warningOscillator = null;
+    warningGainNode = null;
+    warningAudioContext = null;
+  };
+}
+
+export function stopWarningSound() {
+  if (!isWarningPlaying || !warningOscillator) return;
+
+  try {
+    warningOscillator.stop();
+    warningOscillator.disconnect();
+    warningGainNode?.disconnect();
+    warningAudioContext?.close();
+  } catch (err) {
+    console.error('Error stopping warning sound:', err);
+  }
+
+  isWarningPlaying = false;
+  warningOscillator = null;
+  warningGainNode = null;
+  warningAudioContext = null;
+}
