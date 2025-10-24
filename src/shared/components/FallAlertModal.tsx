@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from './Button';
 
 interface FallAlertModalProps {
@@ -10,28 +10,38 @@ interface FallAlertModalProps {
 
 export function FallAlertModal({ isOpen, onSafe, onEmergency, durationSeconds = 60 }: FallAlertModalProps) {
   const [countdown, setCountdown] = useState(durationSeconds);
+  const onEmergencyRef = useRef(onEmergency);
+  const hasTriggeredRef = useRef(false);
+
+  // Keep the ref updated
+  useEffect(() => {
+    onEmergencyRef.current = onEmergency;
+  }, [onEmergency]);
 
   useEffect(() => {
     if (!isOpen) {
       setCountdown(durationSeconds);
+      hasTriggeredRef.current = false; // Reset trigger flag
       return;
     }
 
     // Reset countdown when modal opens
     setCountdown(durationSeconds);
+    hasTriggeredRef.current = false;
 
     const interval = setInterval(() => {
       setCountdown(prev => {
-        if (prev <= 1) {
-          onEmergency(); // Auto-trigger emergency
+        if (prev <= 1 && !hasTriggeredRef.current) {
+          hasTriggeredRef.current = true; // Prevent multiple triggers
+          onEmergencyRef.current(); // Auto-trigger emergency
           return 0;
         }
-        return prev - 1;
+        return prev > 0 ? prev - 1 : 0;
       });
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isOpen, onEmergency, durationSeconds]);
+  }, [isOpen, durationSeconds]);
 
   if (!isOpen) return null;
 

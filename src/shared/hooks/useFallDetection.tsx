@@ -52,8 +52,11 @@ export function FallDetectionProvider({ children }: { children: React.ReactNode 
 
   const lastAccelerationRef = useRef({ x: 0, y: 0, z: 0 });
   const alertTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const fallDetectedTimeRef = useRef<number>(0); // Track last fall detection time
+  const isProcessingEmergencyRef = useRef(false); // Prevent duplicate emergency triggers
 
   const FALL_THRESHOLD = 15; // m/s² - lowered for realistic detection
+  const FALL_COOLDOWN = 30000; // 30 seconds cooldown between fall detections
 
   useEffect(() => {
     if (!isMonitoring || !isFeatureEnabled) {
@@ -62,6 +65,11 @@ export function FallDetectionProvider({ children }: { children: React.ReactNode 
     }
 
     const handleMotion = async (event: DeviceMotionEvent) => {
+      // Double-check monitoring is still active (prevent stale closures)
+      if (!isMonitoring || !isFeatureEnabled) {
+        return;
+      }
+
       if (!event.acceleration) {
         console.warn('No acceleration data available');
         return;
@@ -121,7 +129,18 @@ export function FallDetectionProvider({ children }: { children: React.ReactNode 
   }, [isMonitoring]);
 
   async function handleFallDetected() {
-    if (showAlert) return; // Already showing an alert
+    // Check if already showing an alert
+    if (showAlert) return;
+
+    // Check cooldown - prevent multiple alerts within 30 seconds
+    const now = Date.now();
+    if (now - fallDetectedTimeRef.current < FALL_COOLDOWN) {
+      console.log(`⏳ Fall detection cooldown active. ${Math.ceil((FALL_COOLDOWN - (now - fallDetectedTimeRef.current)) / 1000)}s remaining`);
+      return;
+    }
+
+    // Update last detection time
+    fallDetectedTimeRef.current = now;
 
     // Play warning sound immediately
     playWarningSound();
@@ -161,7 +180,11 @@ export function FallDetectionProvider({ children }: { children: React.ReactNode 
   function dismissAlert() {
     if (alertTimeoutRef.current) {
       clearTimeout(alertTimeoutRef.current);
+      alertTimeoutRef.current = null;
     }
+
+    // Reset emergency processing flag
+    isProcessingEmergencyRef.current = false;
 
     // Update alert status to "safe"
     if (alertId) {
@@ -183,8 +206,17 @@ export function FallDetectionProvider({ children }: { children: React.ReactNode 
   }
 
   async function triggerEmergency(providedWorkerId?: string | any) {
+    // Prevent duplicate emergency triggers
+    if (isProcessingEmergencyRef.current) {
+      console.log('⚠️ Emergency already being processed, skipping duplicate');
+      return;
+    }
+
+    isProcessingEmergencyRef.current = true;
+
     if (alertTimeoutRef.current) {
       clearTimeout(alertTimeoutRef.current);
+      alertTimeoutRef.current = null;
     }
 
     // Play siren sound
@@ -215,6 +247,7 @@ export function FallDetectionProvider({ children }: { children: React.ReactNode 
         console.error('No worker ID available for emergency');
         stopSiren();
         setSosStatus('standby');
+        isProcessingEmergencyRef.current = false; // Reset flag
         alert('❌ Unable to send alert. Please complete your profile first.');
         return;
       }
@@ -238,6 +271,7 @@ export function FallDetectionProvider({ children }: { children: React.ReactNode 
         console.error('Error creating alert:', error);
         stopSiren();
         setSosStatus('standby');
+        isProcessingEmergencyRef.current = false; // Reset flag
         return;
       }
 
@@ -248,6 +282,11 @@ export function FallDetectionProvider({ children }: { children: React.ReactNode 
       // Show visual feedback
       alert('🚨 Emergency alert sent to managers!\n\nSiren is playing. Click "Cancel SOS" to stop.');
     }
+
+    // Reset the processing flag after a short delay to allow the state to update
+    setTimeout(() => {
+      isProcessingEmergencyRef.current = false;
+    }, 2000);
 
     // Here you would also trigger push notifications to managers
     // For now, we've just created/updated the alert
@@ -338,6 +377,21 @@ export function FallDetectionProvider({ children }: { children: React.ReactNode 
   }
 
   async function stopMonitoring() {
+    // Clear any pending timeouts
+    if (alertTimeoutRef.current) {
+      clearTimeout(alertTimeoutRef.current);
+      alertTimeoutRef.current = null;
+    }
+
+    // Reset all refs
+    fallDetectedTimeRef.current = 0;
+    isProcessingEmergencyRef.current = false;
+    lastAccelerationRef.current = { x: 0, y: 0, z: 0 };
+
+    // Close any open alerts
+    setShowAlert(false);
+    setAlertId('');
+
     if (currentShiftId) {
       await supabase
         .from('work_shifts')
@@ -350,6 +404,8 @@ export function FallDetectionProvider({ children }: { children: React.ReactNode 
     setIsMonitoring(false);
     setCurrentWorkerId('');
     setCurrentShiftId('');
+
+    console.log('🛑 Fall detection stopped and cleaned up');
   }
 
   return (
