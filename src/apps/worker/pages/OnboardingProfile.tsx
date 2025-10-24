@@ -9,8 +9,6 @@ export default function OnboardingProfile() {
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [experience, setExperience] = useState<ExperienceLevel>('0-1');
-  const [pin, setPin] = useState('');
-  const [confirmPin, setConfirmPin] = useState('');
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState('');
   const [loading, setLoading] = useState(false);
@@ -44,17 +42,6 @@ export default function OnboardingProfile() {
     e.preventDefault();
     if (!user) {
       setError('Not authenticated');
-      return;
-    }
-
-    // Validate PIN
-    if (pin.length !== 4 || !/^\d+$/.test(pin)) {
-      setError('PIN must be exactly 4 digits');
-      return;
-    }
-
-    if (pin !== confirmPin) {
-      setError('PINs do not match');
       return;
     }
 
@@ -99,7 +86,6 @@ export default function OnboardingProfile() {
           phone: phone,
           role: 'worker',
           photo_url: photoUrl,
-          pin: pin,
         });
 
       if (userError) {
@@ -222,39 +208,6 @@ export default function OnboardingProfile() {
                 required
               />
 
-              <div className="border-t pt-4 mt-4">
-                <h3 className="text-sm font-semibold text-gray-900 mb-3">
-                  Create a 4-Digit PIN
-                </h3>
-                <p className="text-xs text-gray-600 mb-3">
-                  This PIN will allow you to quickly sign in to SafeRise without entering your email each time.
-                </p>
-
-                <Input
-                  type="password"
-                  label="Create PIN"
-                  placeholder="Enter 4 digits"
-                  value={pin}
-                  onChange={(e) => setPin(e.target.value.slice(0, 4))}
-                  maxLength={4}
-                  pattern="\d*"
-                  inputMode="numeric"
-                  required
-                />
-
-                <Input
-                  type="password"
-                  label="Confirm PIN"
-                  placeholder="Re-enter 4 digits"
-                  value={confirmPin}
-                  onChange={(e) => setConfirmPin(e.target.value.slice(0, 4))}
-                  maxLength={4}
-                  pattern="\d*"
-                  inputMode="numeric"
-                  required
-                />
-              </div>
-
               {error && (
                 <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
                   {error}
@@ -265,7 +218,7 @@ export default function OnboardingProfile() {
                 type="submit"
                 className="w-full"
                 isLoading={loading}
-                disabled={!fullName || !phone || !pin || !confirmPin}
+                disabled={!fullName || !phone}
               >
                 Complete Setup
               </Button>

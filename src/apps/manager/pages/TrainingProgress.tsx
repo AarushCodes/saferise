@@ -5,7 +5,7 @@ import { Card, CardBody, Button } from '../../../shared/components';
 
 interface WorkerProgress {
   worker_id: string;
-  full_name: string;
+  name: string;
   phone: string;
   is_certified: boolean;
   completed_lessons: number;
@@ -24,34 +24,45 @@ export default function TrainingProgress() {
 
   async function loadTrainingProgress() {
     try {
-      // Get all workers
+      // Get all worker profiles
       const { data: workerProfiles, error: profileError } = await supabase
         .from('worker_profiles')
-        .select(`
-          id,
-          is_certified,
-          users!inner(full_name, phone)
-        `);
+        .select('id, is_certified, user_id');
 
-      if (profileError) throw profileError;
+      if (profileError) {
+        console.error('Error loading worker profiles:', profileError);
+        throw profileError;
+      }
+
+      console.log('Raw worker profiles:', workerProfiles);
 
       // Get training progress for all workers
       const workersWithProgress: WorkerProgress[] = await Promise.all(
-        (workerProfiles || []).map(async (profile) => {
-          const { data: progress, count } = await supabase
+        (workerProfiles || []).map(async (profile: any) => {
+          // Get user details
+          const { data: user } = await supabase
+            .from('users')
+            .select('full_name, phone')
+            .eq('id', profile.user_id)
+            .single();
+
+          if (!user) return null;
+
+          // Get training progress
+          const { count } = await supabase
             .from('training_progress')
-            .select('*', { count: 'exact' })
+            .select('*', { count: 'exact', head: true })
             .eq('worker_id', profile.id)
             .eq('completed', true);
 
-          const totalLessons = 3; // We have 3 lessons
+          const totalLessons = 3;
           const completedLessons = count || 0;
           const completionPercentage = Math.round((completedLessons / totalLessons) * 100);
 
           return {
             worker_id: profile.id,
-            name: profile.users.full_name,
-            phone: profile.users.phone,
+            name: user.full_name || 'Unknown',
+            phone: user.phone || 'N/A',
             is_certified: profile.is_certified || completedLessons >= 3,
             completed_lessons: completedLessons,
             total_lessons: totalLessons,
@@ -60,9 +71,12 @@ export default function TrainingProgress() {
         })
       );
 
-      setWorkers(workersWithProgress);
+      const validWorkers = workersWithProgress.filter((w) => w !== null);
+      console.log('Valid workers with training progress:', validWorkers);
+      setWorkers(validWorkers as WorkerProgress[]);
     } catch (err) {
       console.error('Error loading training progress:', err);
+      setWorkers([]);
     } finally {
       setLoading(false);
     }

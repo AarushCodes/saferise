@@ -11,8 +11,8 @@ interface Incident {
   photo_url: string;
   voice_note_url: string | null;
   location_text: string | null;
+  is_resolved: boolean;
   created_at: string;
-  status?: string;
   worker_profiles: {
     users: {
       full_name: string;
@@ -25,41 +25,111 @@ export default function Incidents() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(true);
   const [typeFilter, setTypeFilter] = useState<'all' | 'near-miss' | 'unsafe-condition'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'resolved'>('all');
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
 
   useEffect(() => {
     loadIncidents();
-  }, [typeFilter]);
+  }, [typeFilter, statusFilter]);
 
   async function loadIncidents() {
     try {
       let query = supabase
         .from('incidents')
-        .select(`
-          *,
-          worker_profiles!inner(
-            users!inner(full_name, phone)
-          )
-        `)
+        .select('*')
         .order('created_at', { ascending: false });
 
       if (typeFilter !== 'all') {
         query = query.eq('type', typeFilter);
       }
 
-      const { data, error } = await query;
+      if (statusFilter === 'pending') {
+        query = query.eq('is_resolved', false);
+      } else if (statusFilter === 'resolved') {
+        query = query.eq('is_resolved', true);
+      }
 
-      if (error) throw error;
-      setIncidents(data || []);
+      const { data: incidentsData, error } = await query;
+
+      if (error) {
+        console.error('Error loading incidents:', error);
+        throw error;
+      }
+
+      console.log('Raw incidents data:', incidentsData);
+
+      // Get worker details for each incident
+      const incidentsWithWorkerInfo = await Promise.all(
+        (incidentsData || []).map(async (incident) => {
+          const { data: workerProfile } = await supabase
+            .from('worker_profiles')
+            .select('user_id')
+            .eq('id', incident.worker_id)
+            .single();
+
+          if (!workerProfile) return null;
+
+          const { data: user } = await supabase
+            .from('users')
+            .select('full_name, phone')
+            .eq('id', workerProfile.user_id)
+            .single();
+
+          if (!user) return null;
+
+          return {
+            ...incident,
+            worker_profiles: {
+              users: {
+                full_name: user.full_name,
+                phone: user.phone,
+              },
+            },
+          };
+        })
+      );
+
+      const validIncidents = incidentsWithWorkerInfo.filter((incident) => incident !== null);
+      console.log('Valid incidents with worker info:', validIncidents);
+      setIncidents(validIncidents as Incident[]);
     } catch (err) {
       console.error('Error loading incidents:', err);
+      setIncidents([]);
     } finally {
       setLoading(false);
     }
   }
 
-  const nearMissCount = incidents.filter(i => i.type === 'near-miss').length;
-  const unsafeCount = incidents.filter(i => i.type === 'unsafe-condition').length;
+  async function markAsResolved(incidentId: string) {
+    try {
+      const { error } = await supabase
+        .from('incidents')
+        .update({ is_resolved: true })
+        .eq('id', incidentId);
+
+      if (error) throw error;
+
+      // Update local state
+      setIncidents((prev) =>
+        prev.map((incident) =>
+          incident.id === incidentId ? { ...incident, is_resolved: true } : incident
+        )
+      );
+
+      if (selectedIncident && selectedIncident.id === incidentId) {
+        setSelectedIncident({ ...selectedIncident, is_resolved: true });
+      }
+
+      alert('Incident marked as resolved');
+    } catch (err) {
+      console.error('Error marking incident as resolved:', err);
+      alert('Failed to mark incident as resolved');
+    }
+  }
+
+  const nearMissCount = incidents.filter((i) => i.type === 'near-miss').length;
+  const unsafeCount = incidents.filter((i) => i.type === 'unsafe-condition').length;
+  const pendingCount = incidents.filter((i) => !i.is_resolved).length;
 
   if (loading) {
     return (
@@ -85,7 +155,7 @@ export default function Incidents() {
           </div>
 
           {/* Stats */}
-          <div className="grid grid-cols-3 gap-4 mt-4">
+          <div className="grid grid-cols-4 gap-4 mt-4">
             <div className="bg-blue-50 p-4 rounded-lg">
               <p className="text-sm text-gray-600">Total Incidents</p>
               <p className="text-3xl font-bold text-blue-600">{incidents.length}</p>
@@ -98,31 +168,70 @@ export default function Incidents() {
               <p className="text-sm text-gray-600">Unsafe Conditions</p>
               <p className="text-3xl font-bold text-orange-600">{unsafeCount}</p>
             </div>
+            <div className="bg-red-50 p-4 rounded-lg">
+              <p className="text-sm text-gray-600">Pending</p>
+              <p className="text-3xl font-bold text-red-600">{pendingCount}</p>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Filters */}
       <div className="max-w-7xl mx-auto px-4 py-4">
-        <div className="flex gap-2">
-          <Button
-            variant={typeFilter === 'all' ? 'primary' : 'secondary'}
-            onClick={() => setTypeFilter('all')}
-          >
-            All Incidents
-          </Button>
-          <Button
-            variant={typeFilter === 'near-miss' ? 'primary' : 'secondary'}
-            onClick={() => setTypeFilter('near-miss')}
-          >
-            Near-Miss
-          </Button>
-          <Button
-            variant={typeFilter === 'unsafe-condition' ? 'primary' : 'secondary'}
-            onClick={() => setTypeFilter('unsafe-condition')}
-          >
-            Unsafe Conditions
-          </Button>
+        <div className="flex flex-col gap-3">
+          <div>
+            <p className="text-sm font-semibold text-gray-700 mb-2">Filter by Type:</p>
+            <div className="flex gap-2">
+              <Button
+                variant={typeFilter === 'all' ? 'primary' : 'secondary'}
+                onClick={() => setTypeFilter('all')}
+                size="sm"
+              >
+                All Types
+              </Button>
+              <Button
+                variant={typeFilter === 'near-miss' ? 'primary' : 'secondary'}
+                onClick={() => setTypeFilter('near-miss')}
+                size="sm"
+              >
+                Near-Miss
+              </Button>
+              <Button
+                variant={typeFilter === 'unsafe-condition' ? 'primary' : 'secondary'}
+                onClick={() => setTypeFilter('unsafe-condition')}
+                size="sm"
+              >
+                Unsafe Conditions
+              </Button>
+            </div>
+          </div>
+
+          <div>
+            <p className="text-sm font-semibold text-gray-700 mb-2">Filter by Status:</p>
+            <div className="flex gap-2">
+              <Button
+                variant={statusFilter === 'all' ? 'primary' : 'secondary'}
+                onClick={() => setStatusFilter('all')}
+                size="sm"
+              >
+                All Status
+              </Button>
+              <Button
+                variant={statusFilter === 'pending' ? 'primary' : 'secondary'}
+                onClick={() => setStatusFilter('pending')}
+                size="sm"
+              >
+                Pending
+              </Button>
+              <Button
+                variant={statusFilter === 'resolved' ? 'primary' : 'secondary'}
+                onClick={() => setStatusFilter('resolved')}
+                size="sm"
+              >
+                Resolved
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -136,7 +245,11 @@ export default function Incidents() {
                 <h3 className="text-lg font-bold text-gray-900 mb-2">No Incidents</h3>
                 <p className="text-gray-600">
                   {typeFilter === 'all'
-                    ? 'No incidents have been reported yet.'
+                    ? statusFilter === 'pending'
+                      ? 'No pending incidents found.'
+                      : statusFilter === 'resolved'
+                      ? 'No resolved incidents found.'
+                      : 'No incidents have been reported yet.'
                     : typeFilter === 'near-miss'
                     ? 'No near-miss incidents reported.'
                     : 'No unsafe condition incidents reported.'}
@@ -149,7 +262,13 @@ export default function Incidents() {
             {incidents.map((incident) => (
               <Card
                 key={incident.id}
-                className={incident.type === 'unsafe-condition' ? 'bg-orange-50' : 'bg-yellow-50'}
+                className={
+                  incident.is_resolved
+                    ? 'bg-green-50 border-2 border-green-200'
+                    : incident.type === 'unsafe-condition'
+                    ? 'bg-orange-50'
+                    : 'bg-yellow-50'
+                }
               >
                 <CardBody>
                   <div className="flex items-start gap-4">
@@ -166,7 +285,11 @@ export default function Incidents() {
                         <div>
                           <div className="flex items-center gap-2 mb-1">
                             <span className="text-2xl">
-                              {incident.type === 'near-miss' ? '⚠️' : '🚧'}
+                              {incident.is_resolved
+                                ? '✅'
+                                : incident.type === 'near-miss'
+                                ? '⚠️'
+                                : '🚧'}
                             </span>
                             <h3 className="text-lg font-bold text-gray-900">
                               {incident.type === 'near-miss' ? 'Near-Miss Incident' : 'Unsafe Condition'}
@@ -179,20 +302,22 @@ export default function Incidents() {
                             {incident.worker_profiles.users.phone}
                           </p>
                         </div>
-                        <span className="px-3 py-1 bg-yellow-100 text-yellow-800 text-xs font-semibold rounded-full">
-                          Under Review
+                        <span
+                          className={`px-3 py-1 text-xs font-semibold rounded-full ${
+                            incident.is_resolved
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-yellow-100 text-yellow-800'
+                          }`}
+                        >
+                          {incident.is_resolved ? 'Resolved' : 'Under Review'}
                         </span>
                       </div>
 
                       <div className="space-y-2">
-                        <p className="text-sm text-gray-600">
-                          {formatDate(incident.created_at)}
-                        </p>
+                        <p className="text-sm text-gray-600">{formatDate(incident.created_at)}</p>
 
                         {incident.location_text && (
-                          <p className="text-sm text-gray-600">
-                            📍 {incident.location_text}
-                          </p>
+                          <p className="text-sm text-gray-600">📍 {incident.location_text}</p>
                         )}
 
                         {incident.voice_note_url && (
@@ -203,12 +328,22 @@ export default function Incidents() {
                         )}
                       </div>
 
-                      <button
-                        onClick={() => setSelectedIncident(incident)}
-                        className="text-blue-600 text-sm hover:underline mt-2"
-                      >
-                        View Full Details →
-                      </button>
+                      <div className="flex gap-2 mt-3">
+                        <button
+                          onClick={() => setSelectedIncident(incident)}
+                          className="text-blue-600 text-sm hover:underline"
+                        >
+                          View Full Details →
+                        </button>
+                        {!incident.is_resolved && (
+                          <button
+                            onClick={() => markAsResolved(incident.id)}
+                            className="text-green-600 text-sm hover:underline font-semibold"
+                          >
+                            Mark as Resolved
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </CardBody>
@@ -254,7 +389,13 @@ export default function Incidents() {
 
                 <div>
                   <label className="text-sm font-semibold text-gray-700">Status:</label>
-                  <p className="text-yellow-600 font-semibold">Under Review</p>
+                  <p
+                    className={`font-semibold ${
+                      selectedIncident.is_resolved ? 'text-green-600' : 'text-yellow-600'
+                    }`}
+                  >
+                    {selectedIncident.is_resolved ? '✓ Resolved' : 'Under Review'}
+                  </p>
                 </div>
 
                 {selectedIncident.location_text && (
@@ -283,12 +424,25 @@ export default function Incidents() {
                 )}
               </div>
 
-              <button
-                onClick={() => setSelectedIncident(null)}
-                className="mt-6 w-full px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300"
-              >
-                Close
-              </button>
+              <div className="flex gap-2 mt-6">
+                {!selectedIncident.is_resolved && (
+                  <Button
+                    variant="primary"
+                    className="flex-1"
+                    onClick={() => markAsResolved(selectedIncident.id)}
+                  >
+                    Mark as Resolved
+                  </Button>
+                )}
+                <button
+                  onClick={() => setSelectedIncident(null)}
+                  className={`${
+                    selectedIncident.is_resolved ? 'w-full' : 'flex-1'
+                  } px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300`}
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>

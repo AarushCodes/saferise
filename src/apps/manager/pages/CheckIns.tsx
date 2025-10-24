@@ -39,12 +39,7 @@ export default function CheckIns() {
     try {
       let query = supabase
         .from('daily_check_ins')
-        .select(`
-          *,
-          worker_profiles!inner(
-            users!inner(full_name, phone)
-          )
-        `)
+        .select('*')
         .order('created_at', { ascending: false });
 
       if (dateFilter === 'today') {
@@ -58,12 +53,52 @@ export default function CheckIns() {
         query = query.gte('created_at', weekAgo.toISOString());
       }
 
-      const { data, error } = await query;
+      const { data: checkInsData, error } = await query;
 
-      if (error) throw error;
-      setCheckIns(data || []);
+      if (error) {
+        console.error('Error loading check-ins:', error);
+        throw error;
+      }
+
+      console.log('Raw check-ins data:', checkInsData);
+
+      // Get worker details for each check-in
+      const checkInsWithWorkerInfo = await Promise.all(
+        (checkInsData || []).map(async (checkIn) => {
+          const { data: workerProfile } = await supabase
+            .from('worker_profiles')
+            .select('user_id')
+            .eq('id', checkIn.worker_id)
+            .single();
+
+          if (!workerProfile) return null;
+
+          const { data: user } = await supabase
+            .from('users')
+            .select('full_name, phone')
+            .eq('id', workerProfile.user_id)
+            .single();
+
+          if (!user) return null;
+
+          return {
+            ...checkIn,
+            worker_profiles: {
+              users: {
+                full_name: user.full_name,
+                phone: user.phone,
+              },
+            },
+          };
+        })
+      );
+
+      const validCheckIns = checkInsWithWorkerInfo.filter((checkIn) => checkIn !== null);
+      console.log('Valid check-ins with worker info:', validCheckIns);
+      setCheckIns(validCheckIns as CheckIn[]);
     } catch (err) {
       console.error('Error loading check-ins:', err);
+      setCheckIns([]);
     } finally {
       setLoading(false);
     }

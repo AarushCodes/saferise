@@ -1,81 +1,83 @@
 import { useState } from 'react';
-import { supabase } from '../../../shared/lib/supabase';
+import { useAuth } from '../../../shared/hooks/useAuth';
 import { Button, Input, Card, CardBody } from '../../../shared/components';
 
 export default function OnboardingEmail() {
-  const [mode, setMode] = useState<'email' | 'pin'>('pin');
+  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
-  const [pin, setPin] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [emailSent, setEmailSent] = useState(false);
+  const [signupSuccess, setSignupSuccess] = useState(false);
+  const { signIn, signUp } = useAuth();
 
-  const handleEmailSubmit = async (e: React.FormEvent) => {
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
     try {
-      const { error: authError } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          shouldCreateUser: true,
-        },
-      });
+      const { error: authError } = await signIn(email, password);
 
-      if (authError) throw authError;
-
-      setEmailSent(true);
-      setLoading(false);
-    } catch (err: any) {
-      setError(err.message || 'Failed to send sign-in link');
-      setLoading(false);
-    }
-  };
-
-  const handlePinSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-
-    try {
-      // Find user by PIN
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('id, email')
-        .eq('pin', pin)
-        .eq('role', 'worker')
-        .maybeSingle();
-
-      if (userError) throw userError;
-
-      if (!userData) {
-        setError('Invalid PIN. Please try again or use email sign-in.');
+      if (authError) {
+        if (authError.message.includes('Invalid login credentials')) {
+          setError('Invalid email or password');
+        } else if (authError.message.includes('Email not confirmed')) {
+          setError('Please check your email and confirm your account first');
+        } else {
+          setError(authError.message);
+        }
         setLoading(false);
-        return;
       }
-
-      // Send magic link
-      const { error: authError } = await supabase.auth.signInWithOtp({
-        email: userData.email,
-        options: {
-          shouldCreateUser: false,
-        },
-      });
-
-      if (authError) throw authError;
-
-      setEmail(userData.email);
-      setEmailSent(true);
-      setLoading(false);
+      // If successful, auth state change will handle navigation
     } catch (err: any) {
-      setError(err.message || 'Failed to sign in with PIN');
+      setError(err.message || 'Failed to sign in');
       setLoading(false);
     }
   };
 
-  // If email sent, show confirmation
-  if (emailSent) {
+  const handleSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    // Validate password match
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+
+    // Validate password strength
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const { error: authError } = await signUp(email, password);
+
+      if (authError) {
+        if (authError.message.includes('already registered')) {
+          setError('This email is already registered. Please sign in instead.');
+        } else {
+          setError(authError.message);
+        }
+        setLoading(false);
+      } else {
+        // Show success message
+        setSignupSuccess(true);
+        setLoading(false);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to sign up');
+      setLoading(false);
+    }
+  };
+
+  // If signup successful, show confirmation
+  if (signupSuccess) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
         <div className="max-w-md w-full">
@@ -89,23 +91,28 @@ export default function OnboardingEmail() {
               <div className="text-center">
                 <div className="text-6xl mb-4">📧</div>
                 <h2 className="text-2xl font-bold text-gray-900 mb-4">Check Your Email</h2>
-                <p className="text-gray-600 mb-2">We sent a sign-in link to:</p>
-                <p className="font-semibold text-gray-900 mb-6">{email || 'your email'}</p>
+                <p className="text-gray-600 mb-2">We sent a confirmation link to:</p>
+                <p className="font-semibold text-gray-900 mb-6">{email}</p>
 
                 <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4 mb-6">
                   <p className="text-sm text-blue-800 font-medium mb-2">
-                    Click the link in the email to sign in
+                    Click the link in the email to confirm your account
                   </p>
                   <p className="text-xs text-blue-700">
-                    The link will automatically sign you in and take you to the app
+                    Once confirmed, you can sign in with your email and password
                   </p>
                 </div>
 
                 <button
-                  onClick={() => setEmailSent(false)}
+                  onClick={() => {
+                    setSignupSuccess(false);
+                    setMode('signin');
+                    setPassword('');
+                    setConfirmPassword('');
+                  }}
                   className="text-sm text-blue-600 hover:underline"
                 >
-                  Use a different email or PIN
+                  Back to sign in
                 </button>
               </div>
             </CardBody>
@@ -125,79 +132,53 @@ export default function OnboardingEmail() {
 
         <Card>
           <CardBody className="p-8">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">Welcome!</h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-6">
+              {mode === 'signin' ? 'Welcome Back!' : 'Create Account'}
+            </h2>
 
             {/* Mode Toggle */}
             <div className="flex gap-2 mb-6 bg-gray-100 p-1 rounded-lg">
               <button
                 type="button"
                 onClick={() => {
-                  setMode('pin');
+                  setMode('signin');
                   setError('');
+                  setPassword('');
+                  setConfirmPassword('');
                 }}
                 className={`flex-1 py-2 px-4 rounded-md font-medium transition-colors ${
-                  mode === 'pin'
+                  mode === 'signin'
                     ? 'bg-white text-blue-600 shadow-sm'
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
-                🔢 PIN Sign-In
+                Sign In
               </button>
               <button
                 type="button"
                 onClick={() => {
-                  setMode('email');
+                  setMode('signup');
                   setError('');
+                  setPassword('');
+                  setConfirmPassword('');
                 }}
                 className={`flex-1 py-2 px-4 rounded-md font-medium transition-colors ${
-                  mode === 'email'
+                  mode === 'signup'
                     ? 'bg-white text-blue-600 shadow-sm'
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
-                📧 Email Sign-In
+                Sign Up
               </button>
             </div>
 
-            {mode === 'pin' ? (
+            {mode === 'signin' ? (
               <>
                 <p className="text-gray-600 mb-6">
-                  Enter your 4-digit PIN for quick access
+                  Sign in with your email and password
                 </p>
 
-                <form onSubmit={handlePinSubmit} className="space-y-4">
-                  <Input
-                    type="password"
-                    label="PIN"
-                    placeholder="0000"
-                    value={pin}
-                    onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                    maxLength={4}
-                    required
-                    error={error}
-                  />
-
-                  <Button
-                    type="submit"
-                    className="w-full"
-                    isLoading={loading}
-                    disabled={pin.length !== 4}
-                  >
-                    Sign In with PIN
-                  </Button>
-                </form>
-
-                <p className="text-sm text-gray-500 mt-4 text-center">
-                  Don't have a PIN? Set it up in your profile after signing in with email
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="text-gray-600 mb-6">
-                  Enter your email to get started. We'll send you a sign-in link.
-                </p>
-
-                <form onSubmit={handleEmailSubmit} className="space-y-4">
+                <form onSubmit={handleSignIn} className="space-y-4">
                   <Input
                     type="email"
                     label="Email Address"
@@ -205,21 +186,101 @@ export default function OnboardingEmail() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
-                    error={error}
                   />
+
+                  <Input
+                    type="password"
+                    label="Password"
+                    placeholder="Enter your password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+
+                  {error && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
+                      {error}
+                    </div>
+                  )}
 
                   <Button
                     type="submit"
                     className="w-full"
                     isLoading={loading}
-                    disabled={!email}
+                    disabled={!email || !password}
                   >
-                    Send Sign-In Link
+                    Sign In
                   </Button>
                 </form>
 
                 <p className="text-sm text-gray-500 mt-4 text-center">
-                  New users will be automatically registered
+                  Don't have an account?{' '}
+                  <button
+                    onClick={() => setMode('signup')}
+                    className="text-blue-600 hover:underline font-medium"
+                  >
+                    Sign up
+                  </button>
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-gray-600 mb-6">
+                  Create a new account to get started
+                </p>
+
+                <form onSubmit={handleSignUp} className="space-y-4">
+                  <Input
+                    type="email"
+                    label="Email Address"
+                    placeholder="your.email@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+
+                  <Input
+                    type="password"
+                    label="Password"
+                    placeholder="Create a password (min 6 characters)"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+
+                  <Input
+                    type="password"
+                    label="Confirm Password"
+                    placeholder="Re-enter your password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                  />
+
+                  {error && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
+                      {error}
+                    </div>
+                  )}
+
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    isLoading={loading}
+                    disabled={!email || !password || !confirmPassword}
+                  >
+                    Create Account
+                  </Button>
+                </form>
+
+                <p className="text-sm text-gray-500 mt-4 text-center">
+                  Already have an account?{' '}
+                  <button
+                    onClick={() => setMode('signin')}
+                    className="text-blue-600 hover:underline font-medium"
+                  >
+                    Sign in
+                  </button>
                 </p>
               </>
             )}

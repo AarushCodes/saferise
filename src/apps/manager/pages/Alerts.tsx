@@ -50,15 +50,10 @@ export default function Alerts() {
 
   async function loadAlerts() {
     try {
+      // Step 1: Get all alerts
       let query = supabase
         .from('safety_alerts')
-        .select(`
-          *,
-          worker_profiles!inner(
-            user_id,
-            users!inner(full_name, phone)
-          )
-        `)
+        .select('*')
         .order('created_at', { ascending: false });
 
       if (filter === 'active') {
@@ -67,12 +62,63 @@ export default function Alerts() {
         query = query.eq('status', 'emergency');
       }
 
-      const { data, error } = await query;
+      const { data: alertsData, error: alertsError } = await query;
 
-      if (error) throw error;
-      setAlerts(data || []);
+      if (alertsError) {
+        console.error('Error loading alerts:', alertsError);
+        throw alertsError;
+      }
+
+      console.log('Raw alerts data:', alertsData);
+
+      // Step 2: Get worker details for each alert
+      const alertsWithWorkerInfo = await Promise.all(
+        (alertsData || []).map(async (alert) => {
+          // Get worker profile
+          const { data: workerProfile } = await supabase
+            .from('worker_profiles')
+            .select('user_id')
+            .eq('id', alert.worker_id)
+            .single();
+
+          if (!workerProfile) {
+            console.log('No worker profile found for alert:', alert.id);
+            return null;
+          }
+
+          // Get user details
+          const { data: user } = await supabase
+            .from('users')
+            .select('full_name, phone')
+            .eq('id', workerProfile.user_id)
+            .single();
+
+          if (!user) {
+            console.log('No user found for worker profile:', workerProfile.user_id);
+            return null;
+          }
+
+          return {
+            ...alert,
+            worker_profiles: {
+              user_id: workerProfile.user_id,
+              users: {
+                full_name: user.full_name,
+                phone: user.phone,
+              },
+            },
+          };
+        })
+      );
+
+      // Filter out nulls
+      const validAlerts = alertsWithWorkerInfo.filter((alert) => alert !== null);
+      console.log('Valid alerts with worker info:', validAlerts);
+
+      setAlerts(validAlerts as SafetyAlert[]);
     } catch (err) {
       console.error('Error loading alerts:', err);
+      setAlerts([]);
     } finally {
       setLoading(false);
     }

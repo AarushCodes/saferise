@@ -8,8 +8,8 @@ interface AuthContextType {
   session: Session | null;
   userRole: UserRole | null;
   loading: boolean;
-  signInWithOTP: (email: string) => Promise<{ error: any }>;
-  verifyOTP: (email: string, token: string) => Promise<{ error: any }>;
+  signUp: (email: string, password: string) => Promise<{ error: any }>;
+  signIn: (email: string, password: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
 }
 
@@ -68,21 +68,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  async function signInWithOTP(email: string) {
-    const { error } = await supabase.auth.signInWithOtp({
+  async function signUp(email: string, password: string) {
+    const { error } = await supabase.auth.signUp({
       email,
+      password,
       options: {
-        shouldCreateUser: true,
+        emailRedirectTo: window.location.origin + '/worker/home',
       },
     });
     return { error };
   }
 
-  async function verifyOTP(email: string, token: string) {
-    const { error } = await supabase.auth.verifyOtp({
+  async function signIn(email: string, password: string) {
+    const { error } = await supabase.auth.signInWithPassword({
       email,
-      token,
-      type: 'email',
+      password,
     });
     return { error };
   }
@@ -99,8 +99,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     session,
     userRole,
     loading,
-    signInWithOTP,
-    verifyOTP,
+    signUp,
+    signIn,
     signOut,
   };
 

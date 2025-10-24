@@ -1,24 +1,28 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../../shared/lib/supabase';
-import { Card, CardBody, Button } from '../../../shared/components';
+import { Card, CardBody, Button, Input } from '../../../shared/components';
+import { formatDate } from '../../../shared/lib/utils';
 
 interface Worker {
   id: string;
+  user_id: string;
+  experience: '0-1' | '1-3' | '3-5' | '5+';
+  is_certified: boolean;
+  last_active: string;
   full_name: string;
   phone: string;
-  experience_level: 'beginner' | 'intermediate' | 'expert';
-  skills: string[];
-  photo_url: string;
-  is_certified: boolean;
-  is_available: boolean;
+  photo_url: string | null;
+  check_in_compliance?: number;
+  incident_count?: number;
+  alert_count?: number;
 }
 
 export default function WorkerDirectory() {
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'certified' | 'available'>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterCertified, setFilterCertified] = useState<boolean | null>(null);
   const [selectedWorker, setSelectedWorker] = useState<Worker | null>(null);
 
   useEffect(() => {
@@ -29,48 +33,107 @@ export default function WorkerDirectory() {
     try {
       const { data, error } = await supabase
         .from('worker_profiles')
-        .select(`
-          id,
-          experience_level,
-          skills,
-          photo_url,
-          is_certified,
-          is_available,
-          users!inner(full_name, phone)
-        `);
+        .select('id, user_id, experience, is_certified, last_active')
+        .order('last_active', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error loading workers:', error);
+        throw error;
+      }
 
-      const formattedWorkers: Worker[] = (data || []).map(profile => ({
-        id: profile.id,
-        name: profile.users.full_name,
-        phone: profile.users.phone,
-        experience_level: profile.experience_level,
-        skills: profile.skills || [],
-        photo_url: profile.photo_url,
-        is_certified: profile.is_certified,
-        is_available: profile.is_available,
-      }));
+      console.log('Raw worker profiles:', data);
 
-      setWorkers(formattedWorkers);
+      // Get user details for each worker
+      const workersWithUserInfo = await Promise.all(
+        (data || []).map(async (profile: any) => {
+          const { data: user } = await supabase
+            .from('users')
+            .select('full_name, phone, photo_url')
+            .eq('id', profile.user_id)
+            .single();
+
+          if (!user) return null;
+
+          return {
+            id: profile.id,
+            user_id: profile.user_id,
+            experience: profile.experience,
+            is_certified: profile.is_certified,
+            last_active: profile.last_active,
+            full_name: user.full_name || 'Unknown',
+            phone: user.phone || 'N/A',
+            photo_url: user.photo_url,
+          };
+        })
+      );
+
+      const validWorkers = workersWithUserInfo.filter((w) => w !== null);
+      console.log('Valid workers with user info:', validWorkers);
+      setWorkers(validWorkers as Worker[]);
     } catch (err) {
       console.error('Error loading workers:', err);
+      setWorkers([]);
     } finally {
       setLoading(false);
     }
   }
 
-  const filteredWorkers = workers.filter(w => {
-    const matchesSearch = w.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         w.phone.includes(searchTerm);
-    const matchesFilter = filter === 'all' ||
-                         (filter === 'certified' && w.is_certified) ||
-                         (filter === 'available' && w.is_available);
-    return matchesSearch && matchesFilter;
+  async function loadWorkerDetails(workerId: string) {
+    try {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      // Get check-in compliance for last 30 days
+      const { count: checkInCount } = await supabase
+        .from('daily_check_ins')
+        .select('*', { count: 'exact', head: true })
+        .eq('worker_id', workerId)
+        .gte('created_at', thirtyDaysAgo.toISOString());
+
+      // Get incident count
+      const { count: incidentCount } = await supabase
+        .from('incidents')
+        .select('*', { count: 'exact', head: true })
+        .eq('worker_id', workerId);
+
+      // Get alert count
+      const { count: alertCount } = await supabase
+        .from('safety_alerts')
+        .select('*', { count: 'exact', head: true })
+        .eq('worker_id', workerId);
+
+      // Calculate check-in compliance (assuming 30 working days)
+      const compliance = checkInCount ? Math.round((checkInCount / 30) * 100) : 0;
+
+      return {
+        check_in_compliance: compliance,
+        incident_count: incidentCount || 0,
+        alert_count: alertCount || 0,
+      };
+    } catch (err) {
+      console.error('Error loading worker details:', err);
+      return {
+        check_in_compliance: 0,
+        incident_count: 0,
+        alert_count: 0,
+      };
+    }
+  }
+
+  async function handleWorkerClick(worker: Worker) {
+    const details = await loadWorkerDetails(worker.id);
+    setSelectedWorker({ ...worker, ...details });
+  }
+
+  const filteredWorkers = workers.filter((w) => {
+    const matchesSearch =
+      w.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      w.phone.includes(searchTerm);
+    const matchesCertified = filterCertified === null || w.is_certified === filterCertified;
+    return matchesSearch && matchesCertified;
   });
 
-  const certifiedCount = workers.filter(w => w.is_certified).length;
-  const availableCount = workers.filter(w => w.is_available).length;
+  const certifiedCount = workers.filter((w) => w.is_certified).length;
 
   if (loading) {
     return (
@@ -88,7 +151,7 @@ export default function WorkerDirectory() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Worker Directory</h1>
-              <p className="text-sm text-gray-600">View all registered workers</p>
+              <p className="text-sm text-gray-600">Searchable table of all workers</p>
             </div>
             <Link to="/manager">
               <Button variant="secondary">Back to Dashboard</Button>
@@ -96,7 +159,7 @@ export default function WorkerDirectory() {
           </div>
 
           {/* Stats */}
-          <div className="grid grid-cols-3 gap-4 mt-4">
+          <div className="grid grid-cols-2 gap-4 mt-4">
             <div className="bg-blue-50 p-4 rounded-lg">
               <p className="text-sm text-gray-600">Total Workers</p>
               <p className="text-3xl font-bold text-blue-600">{workers.length}</p>
@@ -104,10 +167,6 @@ export default function WorkerDirectory() {
             <div className="bg-green-50 p-4 rounded-lg">
               <p className="text-sm text-gray-600">Certified</p>
               <p className="text-3xl font-bold text-green-600">{certifiedCount}</p>
-            </div>
-            <div className="bg-purple-50 p-4 rounded-lg">
-              <p className="text-sm text-gray-600">Available</p>
-              <p className="text-3xl font-bold text-purple-600">{availableCount}</p>
             </div>
           </div>
         </div>
@@ -125,28 +184,28 @@ export default function WorkerDirectory() {
           />
           <div className="flex gap-2">
             <Button
-              variant={filter === 'all' ? 'primary' : 'secondary'}
-              onClick={() => setFilter('all')}
+              variant={filterCertified === null ? 'primary' : 'secondary'}
+              onClick={() => setFilterCertified(null)}
             >
               All
             </Button>
             <Button
-              variant={filter === 'certified' ? 'primary' : 'secondary'}
-              onClick={() => setFilter('certified')}
+              variant={filterCertified === true ? 'primary' : 'secondary'}
+              onClick={() => setFilterCertified(true)}
             >
-              Certified
+              Certified Only
             </Button>
             <Button
-              variant={filter === 'available' ? 'primary' : 'secondary'}
-              onClick={() => setFilter('available')}
+              variant={filterCertified === false ? 'primary' : 'secondary'}
+              onClick={() => setFilterCertified(false)}
             >
-              Available
+              Not Certified
             </Button>
           </div>
         </div>
       </div>
 
-      {/* Workers Grid */}
+      {/* Workers Table */}
       <div className="max-w-7xl mx-auto px-4 pb-6">
         {filteredWorkers.length === 0 ? (
           <Card>
@@ -161,62 +220,92 @@ export default function WorkerDirectory() {
             </CardBody>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredWorkers.map((worker) => (
-              <Card
-                key={worker.id}
-                className="hover:shadow-lg transition-shadow cursor-pointer"
-                onClick={() => setSelectedWorker(worker)}
-              >
-                <CardBody>
-                  <div className="text-center">
-                    <img
-                      src={worker.photo_url}
-                      alt={worker.name}
-                      className="w-24 h-24 rounded-full mx-auto mb-3 object-cover"
-                    />
-                    <h3 className="text-lg font-bold text-gray-900 mb-1">{worker.name}</h3>
-                    <p className="text-sm text-gray-600 mb-2">{worker.phone}</p>
-
-                    <div className="flex items-center justify-center gap-2 mb-3">
-                      <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
-                        worker.experience_level === 'expert' ? 'bg-purple-100 text-purple-800' :
-                        worker.experience_level === 'intermediate' ? 'bg-blue-100 text-blue-800' :
-                        'bg-green-100 text-green-800'
-                      }`}>
-                        {worker.experience_level.toUpperCase()}
-                      </span>
-                      {worker.is_certified && (
-                        <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded-full">
-                          CERTIFIED
-                        </span>
-                      )}
-                      {worker.is_available && (
-                        <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-semibold rounded-full">
-                          AVAILABLE
-                        </span>
-                      )}
-                    </div>
-
-                    {worker.skills.length > 0 && (
-                      <div className="flex flex-wrap gap-1 justify-center">
-                        {worker.skills.slice(0, 3).map((skill, idx) => (
-                          <span key={idx} className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded">
-                            {skill}
+          <Card>
+            <CardBody>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        Worker
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        Phone
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        Experience
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        Cert Status
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        Last Active
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {filteredWorkers.map((worker) => (
+                      <tr key={worker.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <div className="flex-shrink-0 h-10 w-10">
+                              {worker.photo_url ? (
+                                <img
+                                  className="h-10 w-10 rounded-full object-cover"
+                                  src={worker.photo_url}
+                                  alt={worker.full_name}
+                                />
+                              ) : (
+                                <div className="h-10 w-10 rounded-full bg-gray-300 flex items-center justify-center text-gray-600 font-semibold">
+                                  {worker.full_name.charAt(0)}
+                                </div>
+                              )}
+                            </div>
+                            <div className="ml-3">
+                              <div className="text-sm font-medium text-gray-900">{worker.full_name}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-900">{worker.phone}</div>
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap">
+                          <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                            {worker.experience} years
                           </span>
-                        ))}
-                        {worker.skills.length > 3 && (
-                          <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded">
-                            +{worker.skills.length - 3} more
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </CardBody>
-              </Card>
-            ))}
-          </div>
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap">
+                          {worker.is_certified ? (
+                            <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                              ✓ Certified
+                            </span>
+                          ) : (
+                            <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+                              Not Certified
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {formatDate(worker.last_active)}
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap text-sm">
+                          <button
+                            onClick={() => handleWorkerClick(worker)}
+                            className="text-blue-600 hover:text-blue-900 font-medium"
+                          >
+                            View Profile
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardBody>
+          </Card>
         )}
       </div>
 
@@ -236,53 +325,84 @@ export default function WorkerDirectory() {
               </div>
 
               <div className="text-center mb-6">
-                <img
-                  src={selectedWorker.photo_url}
-                  alt={selectedWorker.name}
-                  className="w-32 h-32 rounded-full mx-auto mb-3 object-cover"
-                />
-                <h3 className="text-2xl font-bold text-gray-900">{selectedWorker.name}</h3>
+                {selectedWorker.photo_url ? (
+                  <img
+                    src={selectedWorker.photo_url}
+                    alt={selectedWorker.full_name}
+                    className="w-32 h-32 rounded-full mx-auto mb-3 object-cover"
+                  />
+                ) : (
+                  <div className="w-32 h-32 rounded-full mx-auto mb-3 bg-gray-300 flex items-center justify-center text-3xl text-gray-600 font-semibold">
+                    {selectedWorker.full_name.charAt(0)}
+                  </div>
+                )}
+                <h3 className="text-2xl font-bold text-gray-900">{selectedWorker.full_name}</h3>
                 <p className="text-gray-600">{selectedWorker.phone}</p>
               </div>
 
               <div className="space-y-4">
                 <div>
-                  <label className="text-sm font-semibold text-gray-700">Experience Level:</label>
-                  <p className="text-gray-900 capitalize">{selectedWorker.experience_level}</p>
+                  <label className="text-sm font-semibold text-gray-700">Experience:</label>
+                  <p className="text-gray-900">{selectedWorker.experience} years</p>
                 </div>
 
                 <div>
-                  <label className="text-sm font-semibold text-gray-700">Status:</label>
-                  <div className="flex gap-2 mt-1">
-                    {selectedWorker.is_certified && (
+                  <label className="text-sm font-semibold text-gray-700">Certification Status:</label>
+                  <div className="mt-1">
+                    {selectedWorker.is_certified ? (
                       <span className="px-3 py-1 bg-green-100 text-green-800 text-sm font-semibold rounded-full">
-                        Certified
+                        ✓ Certified
                       </span>
-                    )}
-                    {selectedWorker.is_available && (
-                      <span className="px-3 py-1 bg-blue-100 text-blue-800 text-sm font-semibold rounded-full">
-                        Available for Work
-                      </span>
-                    )}
-                    {!selectedWorker.is_available && (
+                    ) : (
                       <span className="px-3 py-1 bg-gray-100 text-gray-800 text-sm font-semibold rounded-full">
-                        Unavailable
+                        Not Certified
                       </span>
                     )}
                   </div>
                 </div>
 
-                {selectedWorker.skills.length > 0 && (
-                  <div>
-                    <label className="text-sm font-semibold text-gray-700 block mb-2">Skills:</label>
-                    <div className="flex flex-wrap gap-2">
-                      {selectedWorker.skills.map((skill, idx) => (
-                        <span key={idx} className="px-3 py-1 bg-blue-50 text-blue-700 text-sm rounded-full">
-                          {skill}
-                        </span>
-                      ))}
+                <div>
+                  <label className="text-sm font-semibold text-gray-700">Last Active:</label>
+                  <p className="text-gray-900">{formatDate(selectedWorker.last_active)}</p>
+                </div>
+
+                {selectedWorker.check_in_compliance !== undefined && (
+                  <>
+                    <div className="border-t pt-4">
+                      <h4 className="text-lg font-bold text-gray-900 mb-3">Safety Record (Last 30 Days)</h4>
                     </div>
-                  </div>
+
+                    <div>
+                      <label className="text-sm font-semibold text-gray-700">Check-in Compliance:</label>
+                      <div className="mt-1 flex items-center gap-2">
+                        <div className="flex-1 bg-gray-200 rounded-full h-2">
+                          <div
+                            className={`h-2 rounded-full ${
+                              selectedWorker.check_in_compliance >= 80
+                                ? 'bg-green-600'
+                                : selectedWorker.check_in_compliance >= 60
+                                ? 'bg-yellow-600'
+                                : 'bg-red-600'
+                            }`}
+                            style={{ width: `${selectedWorker.check_in_compliance}%` }}
+                          />
+                        </div>
+                        <span className="text-sm font-semibold text-gray-900">
+                          {selectedWorker.check_in_compliance}%
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-sm font-semibold text-gray-700">Incidents Reported:</label>
+                      <p className="text-gray-900">{selectedWorker.incident_count}</p>
+                    </div>
+
+                    <div>
+                      <label className="text-sm font-semibold text-gray-700">Safety Alerts:</label>
+                      <p className="text-gray-900">{selectedWorker.alert_count}</p>
+                    </div>
+                  </>
                 )}
               </div>
 
