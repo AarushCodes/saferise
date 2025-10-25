@@ -1,8 +1,8 @@
-# SafeRise Setup Guide
+# Samrakshak Setup Guide
 
 ## What's Been Built
 
-I've created the foundation for your SafeRise construction safety platform! Here's what's ready:
+I've created the foundation for your Samrakshak construction safety platform! Here's what's ready:
 
 ### ✅ Completed Features
 
@@ -123,7 +123,7 @@ Save the file!
 ### 6. Run the App
 
 ```bash
-cd saferise
+cd Samrakshak
 pnpm install  # If you haven't already
 pnpm dev
 ```
@@ -148,7 +148,7 @@ The app will open at http://localhost:3000
 ## Project Structure
 
 ```
-saferise/
+Samrakshak/
 ├── src/
 │   ├── apps/
 │   │   ├── worker/              # Worker mobile app

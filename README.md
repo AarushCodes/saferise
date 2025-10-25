@@ -1,4 +1,4 @@
-# SafeRise - Construction Safety Platform
+# Samrakshak - Construction Safety Platform
 
 A comprehensive safety platform for construction workers, site managers, and contractors. Built with React, TypeScript, Tailwind CSS, and Supabase.
 
@@ -32,7 +32,7 @@ A comprehensive safety platform for construction workers, site managers, and con
 ## Project Structure
 
 ```
-saferise/
+Samrakshak/
 ├── src/
 │   ├── apps/
 │   │   ├── worker/       # Worker mobile app

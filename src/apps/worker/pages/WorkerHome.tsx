@@ -112,7 +112,7 @@ export default function WorkerHome() {
       <div className="bg-white shadow">
         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">SafeRise</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Samrakshak</h1>
             <p className="text-sm text-gray-600">Good morning! 👷</p>
           </div>
           <Button variant="ghost" size="sm" onClick={() => signOut()}>
