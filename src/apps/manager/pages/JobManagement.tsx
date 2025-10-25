@@ -104,12 +104,13 @@ export default function JobManagement() {
           posted_by: user?.id,
           title: jobForm.title,
           description: jobForm.description,
-          location_text: jobForm.location,
-          pay_per_day: parseFloat(jobForm.pay_rate),
+          location: jobForm.location,
+          pay_rate: `₹${jobForm.pay_rate}/day`,
           duration_days: parseInt(jobForm.duration_days),
           start_date: jobForm.start_date,
+          required_workers: parseInt(jobForm.required_workers),
           requires_certification: jobForm.requires_certification,
-          status: 'active',
+          status: 'open',
         },
       ]);
 

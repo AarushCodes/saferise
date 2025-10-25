@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../../shared/lib/supabase';
-import { formatCurrency, formatDate } from '../../../shared/lib/utils';
+import { formatDate } from '../../../shared/lib/utils';
 import { Card, CardBody, Button, Select } from '../../../shared/components';
 import type { JobStatus, ApplicationStatus } from '../../../shared/types/database';
 
@@ -9,8 +9,8 @@ interface Job {
   id: string;
   title: string;
   description: string;
-  pay_per_day: number;
-  location_text: string;
+  pay_rate: string;
+  location: string;
   duration_days: number;
   start_date: string;
   requires_certification: boolean;
@@ -66,7 +66,7 @@ export default function Jobs() {
           *,
           users!jobs_posted_by_fkey(full_name)
         `)
-        .eq('status', 'active');
+        .eq('status', 'open');
 
       // Apply filters
       if (filterCertRequired) {
@@ -77,7 +77,7 @@ export default function Jobs() {
       if (sortBy === 'newest') {
         query = query.order('created_at', { ascending: false });
       } else if (sortBy === 'highest_pay') {
-        query = query.order('pay_per_day', { ascending: false });
+        query = query.order('pay_rate', { ascending: false });
       }
       // Note: 'nearest' would require geolocation calc, skipping for now
 
@@ -260,14 +260,14 @@ export default function Jobs() {
                           {job.title}
                         </h3>
                         <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <span>📍 {job.location_text}</span>
+                          <span>📍 {job.location}</span>
                           <span>•</span>
                           <span>⏱️ {job.duration_days} days</span>
                         </div>
                       </div>
                       <div className="text-right">
                         <div className="text-2xl font-bold text-green-600">
-                          {formatCurrency(job.pay_per_day)}/day
+                          {job.pay_rate}
                         </div>
                       </div>
                     </div>
@@ -337,9 +337,9 @@ export default function Jobs() {
                           </span>
                         </div>
                         <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <span>📍 {app.job.location_text}</span>
+                          <span>📍 {app.job.location}</span>
                           <span>•</span>
-                          <span>{formatCurrency(app.job.pay_per_day)}/day</span>
+                          <span>{app.job.pay_rate}</span>
                           <span>•</span>
                           <span>⏱️ {app.job.duration_days} days</span>
                         </div>
