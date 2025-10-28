@@ -84,8 +84,17 @@ export default function Jobs() {
       const { data: jobsData } = await query;
 
       if (jobsData) {
-        const jobsWithNames = jobsData.map(job => ({
-          ...job,
+        const jobsWithNames = jobsData.map((job: any) => ({
+          id: job.id,
+          title: job.title,
+          description: job.description,
+          pay_rate: job.pay_rate,
+          location_text: job.location_text,
+          duration_days: job.duration_days,
+          start_date: job.start_date,
+          requires_certification: job.requires_certification,
+          status: job.status,
+          created_at: job.created_at,
           posted_by_name: job.users?.full_name || 'Unknown',
         }));
         setJobs(jobsWithNames);
@@ -106,11 +115,23 @@ export default function Jobs() {
           .order('applied_at', { ascending: false });
 
         if (appsData) {
-          const appsWithJobNames = appsData.map(app => ({
-            ...app,
+          const appsWithJobNames = appsData.map((app: any) => ({
+            id: app.id,
+            job_id: app.job_id,
+            status: app.status,
+            applied_at: app.applied_at,
             job: {
-              ...app.jobs,
-              posted_by_name: app.jobs?.users?.full_name || 'Unknown',
+              id: app.jobs.id,
+              title: app.jobs.title,
+              description: app.jobs.description,
+              pay_rate: app.jobs.pay_rate,
+              location_text: app.jobs.location_text,
+              duration_days: app.jobs.duration_days,
+              start_date: app.jobs.start_date,
+              requires_certification: app.jobs.requires_certification,
+              status: app.jobs.status,
+              created_at: app.jobs.created_at,
+              posted_by_name: app.jobs.users?.full_name || 'Unknown',
             },
           }));
           setApplications(appsWithJobNames);
@@ -125,16 +146,24 @@ export default function Jobs() {
 
   async function applyToJob(jobId: string) {
     try {
-      await supabase.from('job_applications').insert({
+      const { error } = await supabase.from('job_applications').insert([{
         job_id: jobId,
         worker_id: workerId,
         status: 'pending',
-      });
+      }]);
+
+      if (error) {
+        console.error('Error applying to job:', error);
+        alert('Failed to apply to job');
+        return;
+      }
 
       // Reload data
       loadData();
+      alert('Application submitted successfully!');
     } catch (error) {
       console.error('Error applying to job:', error);
+      alert('Failed to apply to job');
     }
   }
 
