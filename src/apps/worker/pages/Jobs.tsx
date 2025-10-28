@@ -10,7 +10,7 @@ interface Job {
   title: string;
   description: string;
   pay_rate: string;
-  location: string;
+  location_text: string;
   duration_days: number;
   start_date: string;
   requires_certification: boolean;
@@ -260,7 +260,7 @@ export default function Jobs() {
                           {job.title}
                         </h3>
                         <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <span>📍 {job.location}</span>
+                          <span>📍 {job.location_text}</span>
                           <span>•</span>
                           <span>⏱️ {job.duration_days} days</span>
                         </div>
@@ -337,7 +337,7 @@ export default function Jobs() {
                           </span>
                         </div>
                         <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <span>📍 {app.job.location}</span>
+                          <span>📍 {app.job.location_text}</span>
                           <span>•</span>
                           <span>{app.job.pay_rate}</span>
                           <span>•</span>

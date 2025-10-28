@@ -9,7 +9,7 @@ interface Job {
   id: string;
   title: string;
   description: string;
-  location: string;
+  location_text: string;
   pay_rate: string;
   status: 'open' | 'in_progress' | 'completed';
   required_workers: number;
@@ -50,7 +50,7 @@ export default function JobManagement() {
   const [jobForm, setJobForm] = useState({
     title: '',
     description: '',
-    location: '',
+    location_text: '',
     pay_rate: '',
     duration_days: '',
     start_date: '',
@@ -104,7 +104,9 @@ export default function JobManagement() {
           posted_by: user?.id,
           title: jobForm.title,
           description: jobForm.description,
-          location: jobForm.location,
+          location_text: jobForm.location_text,
+          location_lat: 0,
+          location_lng: 0,
           pay_rate: `₹${jobForm.pay_rate}/day`,
           duration_days: parseInt(jobForm.duration_days),
           start_date: jobForm.start_date,
@@ -121,7 +123,7 @@ export default function JobManagement() {
       setJobForm({
         title: '',
         description: '',
-        location: '',
+        location_text: '',
         pay_rate: '',
         duration_days: '',
         start_date: '',
@@ -384,7 +386,7 @@ export default function JobManagement() {
                         <span className="text-2xl">💼</span>
                         <div>
                           <h3 className="text-xl font-bold text-gray-900">{job.title}</h3>
-                          <p className="text-sm text-gray-600">📍 {job.location}</p>
+                          <p className="text-sm text-gray-600">📍 {job.location_text}</p>
                         </div>
                       </div>
 
@@ -504,8 +506,8 @@ export default function JobManagement() {
                   <input
                     type="text"
                     required
-                    value={jobForm.location}
-                    onChange={(e) => setJobForm({ ...jobForm, location: e.target.value })}
+                    value={jobForm.location_text}
+                    onChange={(e) => setJobForm({ ...jobForm, location_text: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="Bandra West, Mumbai"
                   />
