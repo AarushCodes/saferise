@@ -81,22 +81,32 @@ export default function Jobs() {
       }
       // Note: 'nearest' would require geolocation calc, skipping for now
 
-      const { data: jobsData } = await query;
+      const { data: jobsData, error: jobsError } = await query;
+
+      if (jobsError) {
+        console.error('Error loading jobs:', jobsError);
+      }
 
       if (jobsData) {
-        const jobsWithNames = jobsData.map((job: any) => ({
-          id: job.id,
-          title: job.title,
-          description: job.description,
-          pay_rate: job.pay_rate,
-          location_text: job.location_text,
-          duration_days: job.duration_days,
-          start_date: job.start_date,
-          requires_certification: job.requires_certification,
-          status: job.status,
-          created_at: job.created_at,
-          posted_by_name: job.users?.full_name || 'Unknown',
-        }));
+        console.log('Raw jobs data:', jobsData[0]); // Debug first job
+        const jobsWithNames = jobsData.map((job: any) => {
+          // Supabase returns the joined table as an object with the foreign key name
+          const postedByName = job.users?.full_name || 'Unknown';
+
+          return {
+            id: job.id,
+            title: job.title,
+            description: job.description,
+            pay_rate: job.pay_rate,
+            location_text: job.location_text,
+            duration_days: job.duration_days,
+            start_date: job.start_date,
+            requires_certification: job.requires_certification,
+            status: job.status,
+            created_at: job.created_at,
+            posted_by_name: postedByName,
+          };
+        });
         setJobs(jobsWithNames);
       }
 
@@ -115,25 +125,28 @@ export default function Jobs() {
           .order('applied_at', { ascending: false });
 
         if (appsData) {
-          const appsWithJobNames = appsData.map((app: any) => ({
-            id: app.id,
-            job_id: app.job_id,
-            status: app.status,
-            applied_at: app.applied_at,
-            job: {
-              id: app.jobs.id,
-              title: app.jobs.title,
-              description: app.jobs.description,
-              pay_rate: app.jobs.pay_rate,
-              location_text: app.jobs.location_text,
-              duration_days: app.jobs.duration_days,
-              start_date: app.jobs.start_date,
-              requires_certification: app.jobs.requires_certification,
-              status: app.jobs.status,
-              created_at: app.jobs.created_at,
-              posted_by_name: app.jobs.users?.full_name || 'Unknown',
-            },
-          }));
+          const appsWithJobNames = appsData.map((app: any) => {
+            const jobData = app.jobs || {};
+            return {
+              id: app.id,
+              job_id: app.job_id,
+              status: app.status,
+              applied_at: app.applied_at,
+              job: {
+                id: jobData.id,
+                title: jobData.title,
+                description: jobData.description,
+                pay_rate: jobData.pay_rate,
+                location_text: jobData.location_text,
+                duration_days: jobData.duration_days,
+                start_date: jobData.start_date,
+                requires_certification: jobData.requires_certification,
+                status: jobData.status,
+                created_at: jobData.created_at,
+                posted_by_name: jobData.users?.full_name || 'Unknown',
+              },
+            };
+          });
           setApplications(appsWithJobNames);
         }
       }
@@ -149,8 +162,8 @@ export default function Jobs() {
       const { error } = await supabase.from('job_applications').insert([{
         job_id: jobId,
         worker_id: workerId,
-        status: 'pending',
-      }]);
+        status: 'pending' as ApplicationStatus,
+      }] as any);
 
       if (error) {
         console.error('Error applying to job:', error);
